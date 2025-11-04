@@ -114,14 +114,24 @@ def sort_divisions(divisions):
 col_a, col_b, col_c = st.columns(3)
 with col_a:
     div_list = long_df["分区"].dropna().unique().tolist()
-    div = st.selectbox("分区", sort_divisions(div_list))
+    sorted_div_list = sort_divisions(div_list)
+    # 设置默认值为"二区"，如果存在的话
+    default_div_index = sorted_div_list.index("二区") if "二区" in sorted_div_list else 0
+    div = st.selectbox("分区", sorted_div_list, index=default_div_index)
 with col_b:
     dests = long_df[long_df["分区"]==div]["目的地"].dropna().astype(str).unique().tolist()
     dest = st.selectbox("目的地", sorted(dests))
 with col_c:
-    group = st.selectbox("日均区间", ["日均30-50单","日均50-100单","日均100-200单","日均200-300单","日均300-500单","日均500单以上"])
+    group_options = ["日均30-50单","日均50-100单","日均100-200单","日均200-300单","日均300-500单","日均500单以上"]
+    # 设置默认值为"日均100-200单"（索引为2）
+    group = st.selectbox("日均区间", group_options, index=2)
 
-profit_pct = st.number_input("新价格利润率（基于顺丰价格）%", min_value=0.0, max_value=200.0, value=20.0, step=1.0)
+# 修改：利润率默认为0，增加固定金额输入
+col_profit1, col_profit2 = st.columns(2)
+with col_profit1:
+    profit_pct = st.number_input("新价格利润率（基于顺丰价格）%", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
+with col_profit2:
+    fixed_amount = st.number_input("新价格固定增加金额（元）", min_value=0.0, max_value=100.0, value=1.0, step=0.5)
 
 sub = long_df[(long_df["分区"]==div) & (long_df["目的地"].astype(str)==str(dest)) & (long_df["日均区间"]==group)]
 sf = sub[sub["价格对比"]=="顺丰价格"].dropna(subset=["重量kg","价格"])
@@ -134,9 +144,10 @@ def build_curve(df_points: pd.DataFrame, xgrid: np.ndarray) -> np.ndarray:
 
 sf_curve = build_curve(sf, x) if not sf.empty else np.array([np.nan]*len(x))
 qy_curve = build_curve(qy, x) if not qy.empty else np.array([np.nan]*len(x))
-new_curve = sf_curve * (1.0 + profit_pct/100.0)
+# 修改：新价格计算公式包含利润率和固定金额
+new_curve = sf_curve * (1.0 + profit_pct/100.0) + fixed_amount
 
-# 计算新价格和企业价格的盈亏平衡点（交点）
+# 计算新价格和企业价格的价格优势转换点（交点）
 break_even_weight = None
 break_even_price = None
 if not np.any(np.isnan(new_curve)) and not np.any(np.isnan(qy_curve)):
@@ -195,13 +206,13 @@ with col_left:
         x=x, 
         y=new_curve,
         mode='lines+markers',
-        name=f'新价格(顺丰×{1+profit_pct/100.0:.2f})',
+        name=f'新价格(利润率{profit_pct:.1f}% + {fixed_amount:.1f}元)',
         line=dict(color='#2ca02c', width=2),
         marker=dict(size=6, symbol='triangle-up'),
         hovertemplate='<b>新价格</b><br>重量: %{x:.1f} kg<br>价格: %{y:.2f} 元<extra></extra>'
     ))
     
-    # 添加盈亏平衡点辅助线
+    # 添加价格优势转换点辅助线
     if break_even_weight is not None:
         # 添加垂直虚线（不带标注）
         fig.add_vline(
@@ -216,9 +227,9 @@ with col_left:
             x=[break_even_weight],
             y=[break_even_price],
             mode='markers',
-            name='盈亏平衡点',
+            name='价格优势转换点',
             marker=dict(size=12, color='red', symbol='star', line=dict(width=2, color='darkred')),
-            hovertemplate='<b>盈亏平衡点</b><br>重量: %{x:.2f} kg<br>价格: %{y:.2f} 元<extra></extra>',
+            hovertemplate='<b>价格优势转换点</b><br>重量: %{x:.2f} kg<br>价格: %{y:.2f} 元<extra></extra>',
             showlegend=True
         ))
         
@@ -226,7 +237,7 @@ with col_left:
         fig.add_annotation(
             x=break_even_weight,
             y=break_even_price,
-            text=f"盈亏平衡点<br>{break_even_weight:.2f}kg<br>{break_even_price:.2f}元",
+            text=f"价格优势转换点<br>{break_even_weight:.2f}kg<br>{break_even_price:.2f}元",
             showarrow=True,
             arrowhead=2,
             arrowsize=1,
@@ -287,13 +298,13 @@ with col_right:
         "重量(kg)": x,
         "顺丰价格": sf_curve,
         "企业价格": qy_curve,
-        f"新价格(顺丰×{1+profit_pct/100.0:.2f})": new_curve
+        f"新价格(利润率{profit_pct:.1f}% + {fixed_amount:.1f}元)": new_curve
     })
     # 格式化显示
     styled_df = export_df.copy()
     styled_df["顺丰价格"] = styled_df["顺丰价格"].apply(lambda v: f"{v:.2f}" if not np.isnan(v) else "—")
     styled_df["企业价格"] = styled_df["企业价格"].apply(lambda v: f"{v:.2f}" if not np.isnan(v) else "—")
-    styled_df[f"新价格(顺丰×{1+profit_pct/100.0:.2f})"] = styled_df[f"新价格(顺丰×{1+profit_pct/100.0:.2f})"].apply(lambda v: f"{v:.2f}" if not np.isnan(v) else "—")
+    styled_df[f"新价格(利润率{profit_pct:.1f}% + {fixed_amount:.1f}元)"] = styled_df[f"新价格(利润率{profit_pct:.1f}% + {fixed_amount:.1f}元)"].apply(lambda v: f"{v:.2f}" if not np.isnan(v) else "—")
     
     st.dataframe(styled_df, use_container_width=True, height=400)
 
@@ -303,14 +314,14 @@ st.download_button("下载当前曲线CSV", data=export_df.to_csv(index=False).e
 
 st.caption("CSV需包含：分区/目的地/价格对比 + 6个重量点(1/2/3/4/5/15kg)；程序基于这些点位在[1,15]kg做分段线性插值。")
 
-# ==================== 盈亏平衡点汇总表格 ====================
+# ==================== 价格优势转换点汇总表格 ====================
 st.markdown("---")
-st.subheader("盈亏平衡点汇总分析")
+st.subheader("价格优势转换点汇总分析")
 
-def calculate_break_even_point(sf_data, qy_data, profit_rate, weight_range):
+def calculate_break_even_point(sf_data, qy_data, profit_rate, fixed_amt, weight_range):
     """
-    计算盈亏平衡点
-    返回: (平衡点重量, 状态) 其中状态可能是具体重量值、'全盈'或'全亏'
+    计算价格优势转换点
+    返回: (转换点重量, 状态) 其中状态可能是具体重量值、'全优'或'全劣'
     """
     if sf_data.empty or qy_data.empty:
         return None, "数据缺失"
@@ -336,16 +347,17 @@ def calculate_break_even_point(sf_data, qy_data, profit_rate, weight_range):
     if sf_curve_local is None or qy_curve_local is None:
         return None, "数据缺失"
     
-    new_curve_local = sf_curve_local * (1.0 + profit_rate / 100.0)
+    # 修改：新价格计算公式包含利润率和固定金额
+    new_curve_local = sf_curve_local * (1.0 + profit_rate / 100.0) + fixed_amt
     
     # 计算差值
     diff = new_curve_local - qy_curve_local
     
-    # 判断全盈或全亏
+    # 判断全面优势或全面劣势
     if np.all(diff <= 0):
-        return None, "全盈"
+        return None, "全部占优"
     if np.all(diff >= 0):
-        return None, "全亏"
+        return None, "全部劣势"
     
     # 查找交点
     sign_changes = np.where(np.diff(np.sign(diff)))[0]
@@ -361,13 +373,13 @@ def calculate_break_even_point(sf_data, qy_data, profit_rate, weight_range):
     if (y2_new - y1_new) != (y2_qy - y1_qy):
         t = (y1_qy - y1_new) / ((y2_new - y1_new) - (y2_qy - y1_qy))
         break_even_weight = x1 + t * (x2 - x1)
-        return break_even_weight, "平衡点"
+        return break_even_weight, "转换点"
     
     return None, "无交点"
 
 # 生成汇总表格
-st.write("#### 各区域盈亏平衡点汇总")
-st.write(f"当前利润率：{profit_pct:.1f}% | 分析重量范围：2-15kg")
+st.write("#### 各区域价格优势转换点汇总")
+st.write(f"当前利润率：{profit_pct:.1f}% | 固定金额：{fixed_amount:.1f}元 | 分析重量范围：2-15kg")
 
 # 获取所有分区和目的地
 all_divisions = sort_divisions(long_df["分区"].dropna().unique().tolist())
@@ -388,9 +400,10 @@ for div_item in all_divisions:
             sf_data = sub_data[sub_data["价格对比"] == "顺丰价格"].dropna(subset=["重量kg", "价格"])
             qy_data = sub_data[sub_data["价格对比"] == "企业价格"].dropna(subset=["重量kg", "价格"])
             
-            weight, status = calculate_break_even_point(sf_data, qy_data, profit_pct, (2.0, 15.0))
+            # 修改：传入fixed_amount参数
+            weight, status = calculate_break_even_point(sf_data, qy_data, profit_pct, fixed_amount, (2.0, 15.0))
             
-            if status == "平衡点" and weight is not None:
+            if status == "转换点" and weight is not None:
                 row_data[group_item] = f"{weight:.2f}kg"
             else:
                 row_data[group_item] = status
@@ -406,16 +419,16 @@ st.dataframe(summary_df, use_container_width=True, height=400)
 # 添加说明
 st.caption("""
 **说明：**
-- **具体重量值（如 5.23kg）**：表示在该重量点新价格与企业价格持平，超过该重量盈利，低于该重量亏损
-- **全盈**：在整个重量范围内（2-15kg），新价格始终低于企业价格，任何重量都有竞争力
-- **全亏**：在整个重量范围内（2-15kg），新价格始终高于企业价格，没有竞争力
+- **具体重量值（如 5.23kg）**：表示在该重量点新价格与企业价格持平，超过该重量具有价格优势，低于该重量处于价格劣势
+- **全优**：在整个重量范围内（2-15kg），新价格始终低于企业价格，全程具有价格优势
+- **全劣**：在整个重量范围内（2-15kg），新价格始终高于企业价格，全程处于价格劣势
 - **数据缺失**：该区域该日均区间没有完整的价格数据
 """)
 
 # 下载汇总表格按钮
 st.download_button(
-    "下载盈亏平衡点汇总表",
+    "下载价格优势转换点汇总表",
     data=summary_df.to_csv(index=False).encode("utf-8-sig"),
-    file_name=f"盈亏平衡点汇总_利润率{profit_pct:.0f}%.csv",
+    file_name=f"价格优势转换点汇总_利润率{profit_pct:.0f}%_固定金额{fixed_amount:.1f}元.csv",
     mime="text/csv"
 )
