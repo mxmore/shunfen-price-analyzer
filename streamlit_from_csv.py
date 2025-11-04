@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="基于CSV的报价曲线与计算", layout="wide")
+st.set_page_config(page_title="基于顺丰的报价曲线与计算", layout="wide")
 DEFAULT_CSV = "price_table.csv"
 
 def read_price_csv(csv_path: str) -> pd.DataFrame:
@@ -87,8 +87,8 @@ def price_interp_curve(points: dict, x_grid: np.ndarray) -> np.ndarray:
         return np.array([np.nan]*len(x_grid))
     return np.interp(x_grid, xs, ys)
 
-st.title("报价曲线计算（CSV数据源）")
-st.write("将表格导出为 CSV：命名为 `price_table.csv`（或下方修改文件名），放到与本脚本相同目录。")
+st.title("报价曲线计算")
+st.write("基于顺丰价格，计算新价格曲线并与企业价格对比，找出价格优势转换点。")
 
 csv_name = DEFAULT_CSV
 csv_path = os.path.join(os.path.dirname(__file__), csv_name)
@@ -129,9 +129,9 @@ with col_c:
 # 修改：利润率默认为0，增加固定金额输入
 col_profit1, col_profit2 = st.columns(2)
 with col_profit1:
-    profit_pct = st.number_input("新价格利润率（基于顺丰价格）%", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
+    fixed_amount = st.number_input("新价格固定增加金额（元）", min_value=0.0, max_value=100.0, value=1.5, step=0.5)
 with col_profit2:
-    fixed_amount = st.number_input("新价格固定增加金额（元）", min_value=0.0, max_value=100.0, value=1.0, step=0.5)
+    profit_pct = st.number_input("新价格利润率（基于顺丰价格）%", min_value=0.0, max_value=200.0, value=0.0, step=1.0)
 
 sub = long_df[(long_df["分区"]==div) & (long_df["目的地"].astype(str)==str(dest)) & (long_df["日均区间"]==group)]
 sf = sub[sub["价格对比"]=="顺丰价格"].dropna(subset=["重量kg","价格"])
